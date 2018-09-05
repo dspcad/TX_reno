@@ -1,0 +1,2 @@
+background      0
+car             1 
