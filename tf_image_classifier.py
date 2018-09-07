@@ -243,7 +243,7 @@ if __name__ == '__main__':
   mini_batch = 128
 
   K = 2 # number of classes
-  G = 512 # number of grid cells
+  G = 256 # number of grid cells
   P = 4  # four parameters of the bounding boxes
   lamda = 0.001
 
@@ -274,7 +274,7 @@ if __name__ == '__main__':
   # initialize parameters randomly
   X      = tf.placeholder(tf.float32, shape=[None, 720,1280,3])
   Y_     = tf.placeholder(tf.float32, shape=[None,K])
-  #Y_GRID = tf.placeholder(tf.float32, shape=[None,G])
+  Y_GRID = tf.placeholder(tf.float32, shape=[None,G])
   Y_BBOX = tf.placeholder(tf.float32, shape=[None,P])
 
 
@@ -298,35 +298,23 @@ if __name__ == '__main__':
                         initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
   W10 = tf.get_variable("W10", shape=[NUM_NEURON_1,NUM_NEURON_2], 
                         initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
-  #W11 = tf.get_variable("W11", shape=[NUM_NEURON_2,K], initializer=tf.contrib.layers.xavier_initializer())
-  W11 = tf.get_variable("W11", shape=[NUM_NEURON_2,K*G], 
-                        initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
 
 
 
-  b1  = tf.Variable(tf.constant(0.1, shape=[NUM_FILTER_1], dtype=tf.float32), trainable=True, name='b1')
-  b2  = tf.Variable(tf.constant(0.1, shape=[NUM_FILTER_2], dtype=tf.float32), trainable=True, name='b2')
-  b3  = tf.Variable(tf.constant(0.1, shape=[NUM_FILTER_3], dtype=tf.float32), trainable=True, name='b3')
-  b4  = tf.Variable(tf.constant(0.1, shape=[NUM_FILTER_4], dtype=tf.float32), trainable=True, name='b4')
-  b5  = tf.Variable(tf.constant(0.1, shape=[NUM_FILTER_5], dtype=tf.float32), trainable=True, name='b5')
-  b6  = tf.Variable(tf.constant(0.1, shape=[NUM_FILTER_6], dtype=tf.float32), trainable=True, name='b6')
   b9  = tf.Variable(tf.constant(0.1, shape=[NUM_NEURON_1], dtype=tf.float32), trainable=True, name='b9')
   b10 = tf.Variable(tf.constant(0.1, shape=[NUM_NEURON_2], dtype=tf.float32), trainable=True, name='b10')
-  #b11 = tf.Variable(tf.constant(0.1, shape=[K], dtype=tf.float32), trainable=True, name='b11')
-  b11 = tf.Variable(tf.constant(0.1, shape=[K*G], dtype=tf.float32), trainable=True, name='b11')
-
-  #matrix_w = np.zeros((K*G,K))
-  matrix_w = np.full((K*G,K), 0.01)
-  for i in range(0,K):
-    for j in range(0,G):
-      matrix_w[i*G+j][i] = 0.1
-
-  label_pred_transform_W = tf.constant(matrix_w, shape=matrix_w.shape, dtype=tf.float32)
-  tf.stop_gradient(label_pred_transform_W)
 
 
-  W_bbox = tf.get_variable("W_bbox", shape=[K*G,P], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
+
+  W_class = tf.get_variable("W_class", shape=[NUM_NEURON_2,K], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
+  b_class = tf.Variable(tf.constant(0.1, shape=[K], dtype=tf.float32), trainable=True, name='b_class')
+
+
+  W_bbox = tf.get_variable("W_bbox", shape=[NUM_NEURON_2,P], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
   b_bbox = tf.Variable(tf.constant(0.1, shape=[P], dtype=tf.float32), trainable=True, name='b_bbox')
+
+  W_grid = tf.get_variable("W_grid", shape=[NUM_NEURON_2,G], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
+  b_grid = tf.Variable(tf.constant(0.1, shape=[G], dtype=tf.float32), trainable=True, name='b_grid')
 
 
 
@@ -337,8 +325,8 @@ if __name__ == '__main__':
   #conv1 = tf.nn.relu(tf.nn.conv2d(X,     W1, strides=[1,4,6,1], padding='VALID')+b1)
   #conv2 = tf.nn.relu(tf.nn.conv2d(conv1, W2, strides=[1,1,1,1], padding='SAME')+b2)
   #pool1 = tf.nn.max_pool(conv2, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-  conv1 = tf.nn.relu(tf.nn.conv2d(X,     W1, strides=[1,4,6,1], padding='VALID')+b1)
-  conv2 = tf.nn.conv2d(conv1, W2, strides=[1,1,1,1], padding='SAME')+b2
+  conv1 = tf.nn.relu(tf.nn.conv2d(X,     W1, strides=[1,4,6,1], padding='VALID'))
+  conv2 = tf.nn.conv2d(conv1, W2, strides=[1,1,1,1], padding='SAME')
   norm1 = tf.nn.relu(tf.layers.batch_normalization(conv2, training=is_training, renorm=True))
   pool1 = tf.nn.max_pool(norm1, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
  
@@ -346,16 +334,16 @@ if __name__ == '__main__':
   #conv3 = tf.nn.relu(tf.nn.conv2d(pool1, W3, strides=[1,1,1,1], padding='SAME')+b3)
   #conv4 = tf.nn.relu(tf.nn.conv2d(conv3, W4, strides=[1,1,1,1], padding='SAME')+b4)
   #pool2 = tf.nn.max_pool(conv4, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-  conv3 = tf.nn.relu(tf.nn.conv2d(pool1, W3, strides=[1,1,1,1], padding='SAME')+b3)
-  conv4 = tf.nn.conv2d(conv3, W4, strides=[1,1,1,1], padding='SAME')+b4
+  conv3 = tf.nn.relu(tf.nn.conv2d(pool1, W3, strides=[1,1,1,1], padding='SAME'))
+  conv4 = tf.nn.conv2d(conv3, W4, strides=[1,1,1,1], padding='SAME')
   norm2 = tf.nn.relu(tf.layers.batch_normalization(conv4, training=is_training, renorm=True))
   pool2 = tf.nn.max_pool(norm2, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
  
   #conv5 = tf.nn.relu(tf.nn.conv2d(pool2, W5, strides=[1,1,1,1], padding='SAME')+b5)
   #conv6 = tf.nn.relu(tf.nn.conv2d(conv5, W6, strides=[1,1,1,1], padding='SAME')+b6)
   #pool3 = tf.nn.max_pool(conv6, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-  conv5 = tf.nn.relu(tf.nn.conv2d(pool2, W5, strides=[1,1,1,1], padding='SAME')+b5)
-  conv6 = tf.nn.conv2d(conv5, W6, strides=[1,1,1,1], padding='SAME')+b6
+  conv5 = tf.nn.relu(tf.nn.conv2d(pool2, W5, strides=[1,1,1,1], padding='SAME'))
+  conv6 = tf.nn.conv2d(conv5, W6, strides=[1,1,1,1], padding='SAME')
   norm3 = tf.nn.relu(tf.layers.batch_normalization(conv6, training=is_training, renorm=True))
   pool3 = tf.nn.max_pool(norm3, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
@@ -378,24 +366,31 @@ if __name__ == '__main__':
   fc1 = tf.nn.relu(tf.matmul(YY,W9)+b9)
   #fc1_drop = tf.nn.dropout(fc1, keep_prob)
   
-  fc2      = tf.matmul(fc1,W10)+b10
-  fc2_norm = tf.nn.relu(tf.layers.batch_normalization(fc2, training=is_training, renorm=True))
+  fc2 = tf.nn.relu(tf.matmul(fc1,W10)+b10)
+  #fc2_norm = tf.nn.relu(tf.layers.batch_normalization(fc2, training=is_training, renorm=True))
   #fc2_drop = tf.nn.dropout(fc2, keep_prob)
   
-  Y = tf.matmul(fc2,W11)+b11
-  
-  Y_class = tf.matmul(Y,label_pred_transform_W)
-  Y_bbox  = tf.matmul(Y,W_bbox)+b_bbox
+  Y_class = tf.matmul(fc2,W_class)+b_class
+  Y_bbox  = tf.matmul(fc2,W_bbox)+b_bbox
+  Y_grid  = tf.matmul(fc2,W_grid)+b_grid
 
 
   update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
   with tf.control_dependencies(update_ops):
-    mse_loss = tf.losses.mean_squared_error(labels=Y_BBOX, predictions=Y_bbox)
+    mse_loss_bbox = tf.losses.mean_squared_error(labels=Y_BBOX, predictions=Y_bbox)
+    mse_loss_grid = tf.losses.mean_squared_error(labels=Y_GRID, predictions=Y_grid)
     cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=Y_, logits=Y_class))
     reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-    
-    total_loss = 1e-4*mse_loss + 1e-3*cross_entropy + reg_loss
-    #train_step = tf.train.GradientDescentOptimizer(LEARNING_RATE).minimize(total_loss)
+   
+
+     
+    total_loss = 1e-4*mse_loss_bbox + mse_loss_grid + 1e-3*cross_entropy + reg_loss
+    #if(np.argmax(Y_) == 0):
+    #  total_loss = 1e-3*cross_entropy + reg_loss
+    #else:
+    #  total_loss = 1e-4*mse_loss + 1e-3*cross_entropy + reg_loss
+
+
     train_step = tf.train.MomentumOptimizer(LEARNING_RATE, 0.9).minimize(total_loss)
 
     #clipping gradient to avoid gradient exploding
@@ -421,7 +416,7 @@ if __name__ == '__main__':
 
   train_data_path = []
   valid_data_path = []
-  mean_img = np.zeros((720,1280,3))
+  #mean_img = np.zeros((720,1280,3))
   for i in range(4):
     print "/home/hhwu/Reno/detection/train_%s.tfrecords" % i
     train_data_path.append("/home/hhwu/Reno/detection/train_%s.tfrecords" % i)
@@ -429,11 +424,11 @@ if __name__ == '__main__':
     print "/home/hhwu/Reno/detection/valid_%s.tfrecords" % i
     valid_data_path.append("/home/hhwu/Reno/detection/valid_%s.tfrecords" % i)
 
-    print "/home/hhwu/Reno/detection/mean_%s.txt" % i
-    m_img = np.load("/home/hhwu/Reno/detection/mean_%s.npy" % i)
-    mean_img = mean_img + m_img
+    #print "/home/hhwu/Reno/detection/mean_%s.txt" % i
+    #m_img = np.load("/home/hhwu/Reno/detection/mean_%s.npy" % i)
+    #mean_img = mean_img + m_img
 
-  mean_img = mean_img/4
+  #mean_img = mean_img/4
   #channel_mean = np.mean(mean_img, axis=(0,1))
   #print channel_mean
 
@@ -450,6 +445,8 @@ if __name__ == '__main__':
                      'train/xmax' : tf.FixedLenFeature([], tf.int64),
                      'train/ymin' : tf.FixedLenFeature([], tf.int64),
                      'train/ymax' : tf.FixedLenFeature([], tf.int64),
+                     'train/grid' : tf.FixedLenFeature([G], tf.float32),
+                     #'train/grid' : tf.VarLenFeature(tf.float32),
                      'train/label': tf.FixedLenFeature([], tf.int64)}
     # Create a list of filenames and pass it to a queue
     train_filename_queue = tf.train.string_input_producer(train_data_path, shuffle=True)
@@ -473,12 +470,14 @@ if __name__ == '__main__':
     train_label_xmax = tf.cast(train_features['train/xmax'], tf.float32)
     train_label_ymin = tf.cast(train_features['train/ymin'], tf.float32)
     train_label_ymax = tf.cast(train_features['train/ymax'], tf.float32)
-
+    train_label_grid = tf.cast(train_features['train/grid'], tf.float32)
+    #train_label_grid = tf.sparse_tensor_to_dense(train_features['train/grid'], default_value=0)
+    #train_label_grid.set_shape([1,G])
 
 
     # Reshape image data into the original shape
     train_image = tf.reshape(train_image, [720, 1280, 3])
-    train_image = tf.subtract(train_image,mean_img)
+    #train_image = tf.subtract(train_image,mean_img)
     # train_image = tf.image.per_image_standardization(train_image)
 
     #train_image = tf.image.resize_images(train_image, [640, 640])
@@ -496,7 +495,7 @@ if __name__ == '__main__':
       train_label_box_coor = tf.stack([train_label_xmin, train_label_xmax, train_label_ymin, train_label_ymax])
 
     #print "TFRecord: hhwu !"
-    train_images, train_labels, tr_box_coors = tf.train.batch([train_image, train_label, train_label_box_coor], 
+    train_images, train_labels, tr_box_coors, train_grids = tf.train.batch([train_image, train_label, train_label_box_coor, train_label_grid], 
                                                  batch_size=mini_batch, capacity=20*mini_batch, num_threads=16)
     #train_images, train_labels = tf.train.batch([train_image, train_label], 
     #                                             batch_size=mini_batch, capacity=20*mini_batch, num_threads=16)
@@ -510,6 +509,7 @@ if __name__ == '__main__':
                      'valid/xmax' : tf.FixedLenFeature([], tf.int64),
                      'valid/ymin' : tf.FixedLenFeature([], tf.int64),
                      'valid/ymax' : tf.FixedLenFeature([], tf.int64),
+                     'valid/grid' : tf.FixedLenFeature([G], tf.float32),
                      'valid/label': tf.FixedLenFeature([], tf.int64)}
     # Create a list of filenames and pass it to a queue
     #valid_filename_queue = tf.train.string_input_producer([valid_data_path])
@@ -531,11 +531,14 @@ if __name__ == '__main__':
     valid_label_xmax = tf.cast(valid_features['valid/xmax'], tf.float32)
     valid_label_ymin = tf.cast(valid_features['valid/ymin'], tf.float32)
     valid_label_ymax = tf.cast(valid_features['valid/ymax'], tf.float32)
+    valid_label_grid = tf.cast(valid_features['valid/grid'], tf.float32)
+    #valid_label_grid = tf.sparse_tensor_to_dense(valid_features['valid/grid'], default_value=0)
+    #valid_label_grid.set_shape([1,G])
 
 
     # Reshape image data into the original shape
     valid_image = tf.reshape(valid_image, [720, 1280, 3])
-    valid_image = tf.subtract(valid_image,mean_img)
+    #valid_image = tf.subtract(valid_image,mean_img)
     # valid_image = tf.image.per_image_standardization(valid_image)
 
     #valid_image = tf.image.resize_images(valid_image, [640, 640])
@@ -543,7 +546,7 @@ if __name__ == '__main__':
     valid_label_box_coor = tf.stack([valid_label_xmin, valid_label_xmax, valid_label_ymin, valid_label_ymax])
     
 
-    valid_images, valid_labels, vl_box_coors = tf.train.batch([valid_image, valid_label, valid_label_box_coor], 
+    valid_images, valid_labels, vl_box_coors, valid_grids = tf.train.batch([valid_image, valid_label, valid_label_box_coor, valid_label_grid], 
                                                  batch_size=100, capacity=1000, num_threads=16)
 
 
@@ -555,9 +558,9 @@ if __name__ == '__main__':
     ###############################
     # Restore variables from disk #
     ###############################
-    model_name = "model_small_0.31_97000"
-    saver.restore(sess, "./checkpoint/%s.ckpt" % model_name)
-    print "Model %s restored." % model_name
+    #model_name = "model_small_0.31_97000"
+    #saver.restore(sess, "./checkpoint/%s.ckpt" % model_name)
+    #print "Model %s restored." % model_name
 
 
     # Create a coordinator and run all QueueRunner objects
@@ -570,9 +573,11 @@ if __name__ == '__main__':
     highest_IOU = 0
     for itr in xrange(100000):
       #print "bn_moving_vars: ", bn_moving_vars
-      x, y, box_coord = sess.run([train_images, train_labels, tr_box_coors])
+      x, y, box_coord, grid = sess.run([train_images, train_labels, tr_box_coors, train_grids])
+      #print grid
+      #print grid.shape
       #train_step.run(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, keep_prob: DROPOUT_PROB, is_training: True})
-      sess.run([train_step, update_ops], feed_dict={X: x, Y_: y, Y_BBOX: box_coord, keep_prob: DROPOUT_PROB, is_training: True})
+      sess.run([train_step, update_ops], feed_dict={X: x, Y_: y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: DROPOUT_PROB, is_training: True})
 
       #elapsed_time = time.time() - start_time
       #print "Time for training: %f" % elapsed_time
@@ -584,20 +589,20 @@ if __name__ == '__main__':
         #  print "bn_moving_var: ", g.eval()
        
 
-        pred_bbox = Y_bbox.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, keep_prob: 1.0, is_training: False})
+        pred_bbox = Y_bbox.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False})
         #print "pred_bbox: ", pred_bbox
         #tt = np.mean(checkIOU(box_coord, pred_bbox))
         #print tt
         #print tt.shape
-        print "Iter %d:  learning rate: %f  cross entropy: %f  mse: %f  reg: %f  accuracy: %f  mean IOU: %f" % (itr,
-                                                                LEARNING_RATE,
-                                                                #lr.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord}),
-                                                                cross_entropy.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, keep_prob: 1.0, is_training: False}),
-                                                                mse_loss.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, keep_prob: 1.0, is_training: False}),
-                                                                #reg_loss,
-                                                                reg_loss.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, keep_prob: 1.0, is_training: False}),
-                                                                accuracy.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, keep_prob: 1.0, is_training: False}),
-                                                                np.mean(checkIOU(box_coord, pred_bbox)))
+        print "Iter %d:  learning rate: %f  cross entropy: %.3f  mse_bbox: %.3f  mse_grid: %.3f reg: %.3f  accuracy: %.3f  mean IOU: %.3f" % (itr,
+                                              LEARNING_RATE,
+                                              #lr.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord}),
+                                              cross_entropy.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False}),
+                                              mse_loss_bbox.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False}),
+                                              mse_loss_grid.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False}),
+                                              reg_loss.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False}),
+                                              accuracy.eval(feed_dict={X: x, Y_: y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False}),
+                                              np.mean(checkIOU(box_coord, pred_bbox)))
         #for j in range(0, mini_batch):
         #  bbox_image = drawBBox(x[j],pred_bbox[j], box_coord[j])
         #  
@@ -618,17 +623,17 @@ if __name__ == '__main__':
         valid_accuracy = 0.0
         valid_IOU = 0.0
         for i in range(0,20):
-          test_x, test_y, box_coord = sess.run([valid_images, valid_labels, vl_box_coors])
+          test_x, test_y, box_coord, grid = sess.run([valid_images, valid_labels, vl_box_coors, valid_grids])
           #Y_labels_with_grid = expandLabel(test_y, box_coord, 100)
           #box_coord[:,0] = box_coord[:,0]
           #box_coord[:,1] = box_coord[:,1]
           #box_coord[:,2] = box_coord[:,2]
           #box_coord[:,3] = box_coord[:,3]
 
-          pred_bbox = Y_bbox.eval(feed_dict={X: test_x, Y_: test_y, Y_BBOX: box_coord, keep_prob: 1.0, is_training: False})
+          pred_bbox = Y_bbox.eval(feed_dict={X: test_x, Y_: test_y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False})
 
    
-          valid_accuracy += correct_sum.eval(feed_dict={X: test_x, Y_: test_y, Y_BBOX: box_coord, keep_prob: 1.0, is_training: False})
+          valid_accuracy += correct_sum.eval(feed_dict={X: test_x, Y_: test_y, Y_BBOX: box_coord, Y_GRID: grid, keep_prob: 1.0, is_training: False})
           valid_IOU += np.mean(checkIOU(box_coord, pred_bbox))
 
         valid_accuracy = valid_accuracy/2000
