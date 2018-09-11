@@ -244,7 +244,7 @@ if __name__ == '__main__':
   mini_batch = 128
 
   K = 2 # number of classes
-  G = 512 # number of grid cells
+  G = 256 # number of grid cells
   P = 4  # four parameters of the bounding boxes
   lamda = 0.001
 
@@ -274,8 +274,8 @@ if __name__ == '__main__':
   # initialize parameters randomly
   X      = tf.placeholder(tf.float32, shape=[None, 720,1280,3])
   Y_     = tf.placeholder(tf.float32, shape=[None,K])
-  #Y_GRID = tf.placeholder(tf.float32, shape=[None,G])
   Y_BBOX = tf.placeholder(tf.float32, shape=[None,P])
+  Y_GRID = tf.placeholder(tf.float32, shape=[None,G])
 
 
   W1  = tf.get_variable("W1", shape=[12,20,3,NUM_FILTER_1], 
@@ -295,9 +295,6 @@ if __name__ == '__main__':
                         initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
   W10 = tf.get_variable("W10", shape=[NUM_NEURON_1,NUM_NEURON_2], 
                         initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
-  #W11 = tf.get_variable("W11", shape=[NUM_NEURON_2,K], initializer=tf.contrib.layers.xavier_initializer())
-  W11 = tf.get_variable("W11", shape=[NUM_NEURON_2,K*G], 
-                        initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
 
 
 
@@ -309,21 +306,18 @@ if __name__ == '__main__':
   b6  = tf.Variable(tf.constant(0.1, shape=[NUM_FILTER_6], dtype=tf.float32), trainable=True, name='b6')
   b9  = tf.Variable(tf.constant(0.1, shape=[NUM_NEURON_1], dtype=tf.float32), trainable=True, name='b9')
   b10 = tf.Variable(tf.constant(0.1, shape=[NUM_NEURON_2], dtype=tf.float32), trainable=True, name='b10')
-  #b11 = tf.Variable(tf.constant(0.1, shape=[K], dtype=tf.float32), trainable=True, name='b11')
-  b11 = tf.Variable(tf.constant(0.1, shape=[K*G], dtype=tf.float32), trainable=True, name='b11')
-
-  #matrix_w = np.zeros((K*G,K))
-  matrix_w = np.full((K*G,K), 0.01)
-  for i in range(0,K):
-    for j in range(0,G):
-      matrix_w[i*G+j][i] = 0.1
-
-  label_pred_transform_W = tf.constant(matrix_w, shape=matrix_w.shape, dtype=tf.float32)
-  tf.stop_gradient(label_pred_transform_W)
 
 
-  W_bbox = tf.get_variable("W_bbox", shape=[K*G,P], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
+  W_class = tf.get_variable("W_class", shape=[NUM_NEURON_2,K], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
+  b_class = tf.Variable(tf.constant(0.1, shape=[K], dtype=tf.float32), trainable=True, name='b_class')
+
+
+  W_bbox = tf.get_variable("W_bbox", shape=[NUM_NEURON_2,P], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
   b_bbox = tf.Variable(tf.constant(0.1, shape=[P], dtype=tf.float32), trainable=True, name='b_bbox')
+
+  W_grid = tf.get_variable("W_grid", shape=[NUM_NEURON_2,G], initializer=tf.contrib.layers.xavier_initializer(), regularizer=tf.contrib.layers.l2_regularizer(lamda))
+  b_grid = tf.Variable(tf.constant(0.1, shape=[G], dtype=tf.float32), trainable=True, name='b_grid')
+
 
 
 
@@ -348,8 +342,8 @@ if __name__ == '__main__':
   #conv1 = tf.nn.relu(tf.nn.conv2d(X,     W1, strides=[1,4,6,1], padding='VALID')+b1)
   #conv2 = tf.nn.relu(tf.nn.conv2d(conv1, W2, strides=[1,1,1,1], padding='SAME')+b2)
   #pool1 = tf.nn.max_pool(conv2, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-  conv1 = tf.nn.relu(tf.nn.conv2d(X,     W1, strides=[1,4,6,1], padding='VALID')+b1)
-  conv2 = tf.nn.conv2d(conv1, W2, strides=[1,1,1,1], padding='SAME')+b2
+  conv1 = tf.nn.relu(tf.nn.conv2d(X,     W1, strides=[1,4,6,1], padding='SAME')+b1)
+  conv2 = tf.nn.conv2d(conv1, W2, strides=[1,1,1,1], padding='SAME')
   norm1 = tf.nn.relu(tf.layers.batch_normalization(conv2, training=is_training, renorm=True))
   pool1 = tf.nn.max_pool(norm1, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
  
@@ -357,20 +351,20 @@ if __name__ == '__main__':
   #conv3 = tf.nn.relu(tf.nn.conv2d(pool1, W3, strides=[1,1,1,1], padding='SAME')+b3)
   #conv4 = tf.nn.relu(tf.nn.conv2d(conv3, W4, strides=[1,1,1,1], padding='SAME')+b4)
   #pool2 = tf.nn.max_pool(conv4, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-  conv3 = tf.nn.relu(tf.nn.conv2d(pool1, W3, strides=[1,1,1,1], padding='SAME')+b3)
-  conv4 = tf.nn.conv2d(conv3, W4, strides=[1,1,1,1], padding='SAME')+b4
+  conv3 = tf.nn.relu(tf.layers.batch_normalization(tf.nn.conv2d(pool1, W3, strides=[1,1,1,1], padding='SAME'), training=is_training, renorm=True))
+  conv4 = tf.nn.conv2d(conv3, W4, strides=[1,1,1,1], padding='SAME')
   norm2 = tf.nn.relu(tf.layers.batch_normalization(conv4, training=is_training, renorm=True))
   pool2 = tf.nn.max_pool(norm2, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
  
   #conv5 = tf.nn.relu(tf.nn.conv2d(pool2, W5, strides=[1,1,1,1], padding='SAME')+b5)
   #conv6 = tf.nn.relu(tf.nn.conv2d(conv5, W6, strides=[1,1,1,1], padding='SAME')+b6)
   #pool3 = tf.nn.max_pool(conv6, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-  conv5 = tf.nn.relu(tf.nn.conv2d(pool2, W5, strides=[1,1,1,1], padding='SAME')+b5)
-  conv6 = tf.nn.conv2d(conv5, W6, strides=[1,1,1,1], padding='SAME')+b6
+  conv5 = tf.nn.relu(tf.layers.batch_normalization(tf.nn.conv2d(pool2, W5, strides=[1,1,1,1], padding='SAME'), training=is_training, renorm=True))
+  conv6 = tf.nn.conv2d(conv5, W6, strides=[1,1,1,1], padding='SAME')
   norm3 = tf.nn.relu(tf.layers.batch_normalization(conv6, training=is_training, renorm=True))
   pool3 = tf.nn.max_pool(norm3, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
-
+ 
 
   print "conv1: ", conv1.get_shape()
   print "conv2: ", conv2.get_shape()
@@ -389,25 +383,28 @@ if __name__ == '__main__':
   fc1 = tf.nn.relu(tf.matmul(YY,W9)+b9)
   #fc1_drop = tf.nn.dropout(fc1, keep_prob)
   
-  fc2      = tf.matmul(fc1,W10)+b10
-  fc2_norm = tf.nn.relu(tf.layers.batch_normalization(fc2, training=is_training, renorm=True))
+  fc2 = tf.nn.relu(tf.matmul(fc1,W10)+b10)
+  #fc2_norm = tf.nn.relu(tf.layers.batch_normalization(fc2, training=is_training, renorm=True))
   #fc2_drop = tf.nn.dropout(fc2, keep_prob)
   
-  Y = tf.matmul(fc2,W11)+b11
-  
-  Y_class = tf.matmul(Y,label_pred_transform_W)
-  Y_bbox  = tf.matmul(Y,W_bbox)+b_bbox
+  Y_class = tf.matmul(fc2,W_class)+b_class
+  Y_bbox  = tf.matmul(fc2,W_bbox)+b_bbox
+  Y_grid  = tf.matmul(fc2,W_grid)+b_grid
+
+
 
 
   update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
   with tf.control_dependencies(update_ops):
-    mse_loss = tf.losses.mean_squared_error(labels=Y_BBOX, predictions=Y_bbox)
+    mse_loss_bbox = tf.losses.mean_squared_error(labels=Y_BBOX, predictions=Y_bbox)
+    mse_loss_grid = tf.losses.mean_squared_error(labels=Y_GRID, predictions=Y_grid)
     cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=Y_, logits=Y_class))
     reg_loss = sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-  
-    total_loss = 1e-4*mse_loss + 1e-3*cross_entropy + reg_loss
-    train_step = tf.train.MomentumOptimizer(LEARNING_RATE, 0.9).minimize(total_loss)
+   
 
+     
+    total_loss = 1e-3*mse_loss_bbox + 1e-4*mse_loss_grid + 1e-3*cross_entropy + reg_loss
+ 
 
   correct_prediction = tf.equal(tf.argmax(Y_class, 1), tf.argmax(Y_, 1))
   correct_sum = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
@@ -450,6 +447,7 @@ if __name__ == '__main__':
                      'valid/xmax' : tf.FixedLenFeature([], tf.int64),
                      'valid/ymin' : tf.FixedLenFeature([], tf.int64),
                      'valid/ymax' : tf.FixedLenFeature([], tf.int64),
+                     'valid/grid' : tf.FixedLenFeature([G], tf.float32),
                      'valid/label': tf.FixedLenFeature([], tf.int64)}
     # Create a list of filenames and pass it to a queue
     #valid_filename_queue = tf.train.string_input_producer([valid_data_path])
@@ -459,7 +457,7 @@ if __name__ == '__main__':
     valid_reader = tf.TFRecordReader()
     _, valid_serialized_example = valid_reader.read(valid_filename_queue)
 
-    # Decode the record read by the reader
+        # Decode the record read by the reader
     valid_features = tf.parse_single_example(valid_serialized_example, features=valid_feature)
     # Convert the image data from string back to the numbers
     valid_image = tf.cast(tf.decode_raw(valid_features['valid/image'], tf.uint8), tf.float32)
@@ -471,6 +469,9 @@ if __name__ == '__main__':
     valid_label_xmax = tf.cast(valid_features['valid/xmax'], tf.float32)
     valid_label_ymin = tf.cast(valid_features['valid/ymin'], tf.float32)
     valid_label_ymax = tf.cast(valid_features['valid/ymax'], tf.float32)
+    valid_label_grid = tf.cast(valid_features['valid/grid'], tf.float32)
+    #valid_label_grid = tf.sparse_tensor_to_dense(valid_features['valid/grid'], default_value=0)
+    #valid_label_grid.set_shape([1,G])
 
 
     # Reshape image data into the original shape
@@ -483,8 +484,9 @@ if __name__ == '__main__':
     valid_label_box_coor = tf.stack([valid_label_xmin, valid_label_xmax, valid_label_ymin, valid_label_ymax])
     
 
-    valid_images, valid_labels, vl_box_coors = tf.train.batch([valid_image, valid_label, valid_label_box_coor], 
+    valid_images, valid_labels, vl_box_coors, valid_grids = tf.train.batch([valid_image, valid_label, valid_label_box_coor, valid_label_grid], 
                                                  batch_size=100, capacity=1000, num_threads=16)
+
 
 
 
@@ -495,7 +497,7 @@ if __name__ == '__main__':
     ###############################
     # Restore variables from disk #
     ###############################
-    model_name = "model_small_0.31_97000"
+    model_name = "model_small_0.02_98000"
     saver.restore(sess, "./checkpoint/%s.ckpt" % model_name)
     print "Model %s restored." % model_name
 
